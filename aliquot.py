@@ -18,6 +18,7 @@ def startup_db():
             TABLE Aliquot
             (integer, factors, successor, type,
             UNIQUE(integer));""");
+        dbconn.commit();
 
 def shutdown_db():
     global dbconn, dbcursor;
@@ -33,6 +34,7 @@ def update_aliquot_type(integer, new_type):
         SET type = ?
         WHERE integer = ?;""",
         [new_type, integer]);
+    dbconn.commit();
 
 def save_aliquot(integer, factors, successor, type):
     assert dbconn;
@@ -42,6 +44,7 @@ def save_aliquot(integer, factors, successor, type):
         INTO Aliquot
         VALUES (?, ?, ?, ?);""",
         [integer, factors_str, successor, type]);
+    dbconn.commit();
 
 def aliquot_computed(integer):
     results = dbcursor.execute("""
@@ -95,6 +98,16 @@ def populate_aliquot_sequence(integer, prog_callback=None):
             if type == "Amicable" or type == "Sociable":
                 for prev_integer in trace:
                     update_aliquot_type(prev_integer, type);
+            # (悪) This information gets clobbered when we have
+            # saved in the database and thus close sequences
+            # before computing the whole thing. save_aliquot
+            # also overwrites what's in the database with
+            # what will now be basically no-trace variants.
+            # How will we update what's in the database when
+            # we encounter a terminal type? Or perhaps refuse
+            # to run this computation on any existing number
+            # beforehand. Like aliquot_computed(integer):
+            # return trace; at the start of the loop.
             if type == "Perfect" and not aliquot == 1:
                 for prev_integer in trace:
                     update_aliquot_type(prev_integer, "Aspiring");
