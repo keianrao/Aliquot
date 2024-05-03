@@ -40,7 +40,7 @@ def save_aliquot(integer, factors, successor, type):
     assert dbconn;
     factors_str = ",".join(map(str, factors));
     dbcursor.execute("""
-        INSERT OR REPLACE
+        INSERT
         INTO Aliquot
         VALUES (?, ?, ?, ?);""",
         [integer, factors_str, successor, type]);
@@ -54,15 +54,56 @@ def aliquot_computed(integer):
         [integer]);
     return bool(results.fetchone());
 
-def print_aliquot_data():
+def get_predecessors(integer):
+    sql = """
+        SELECT integer
+        FROM Aliquot
+        WHERE successor = ?""";
+    returnee = set();
+    while True:
+        results = dbcursor.execute(sql, [integer]);
+        line = results.fetchone();
+        if not line: break;
+        [predecessor] = line;
+        prev_len = len(returnee);
+        returnee.add(predecessor);
+        if len(returnee) == prev_len: break;
+        integer = predecessor;
+    return returnee;
+
+def get_successors(integer):
+    sql = """
+        SELECT successor
+        FROM Aliquot
+        WHERE integer = ?;""";
+    original = integer;
+    returnee = [];
+    while True:
+        results = dbcursor.execute(sql, [integer]);
+        line = results.fetchone();
+        if not line: break;
+        [successor] = line;
+        if successor == integer: break;
+        if successor in returnee: break;
+        if successor == original: break;
+        returnee.append(successor);
+        integer = successor;
+    return returnee;
+
+def get_aliquot(integer):
     assert dbconn;
     results = dbcursor.execute("""
         SELECT *
-        FROM Aliquot;""");
-    for line in results.fetchall():
-        [integer, factors_str, successor, type] = line;
-        factors = list(map(int, factors_str.split(",")));
-        print(integer, factors, successor, type, sep = " % ");
+        FROM Aliquot
+        WHERE integer = ?;""",
+        [integer]);
+    line = results.fetchone();
+    if not line: return line;
+    line = list(line);
+    factors_str = line[1];
+    factors = list(map(int, factors_str.split(",")));
+    line[1] = factors;
+    return line;
 
 
 def factor(integer):
@@ -78,48 +119,39 @@ def factor(integer):
 
 def populate_aliquot_sequence(integer, prog_callback=None):
     trace = [];
-    try:
-        while True:
-            # Recursion by loop to allow more than 900 iterations.
-    
+    while True:
+        # Recursion by loop to allow more than 900 iterations.
+        try:
+            if aliquot_computed(integer): break;
             if prog_callback: prog_callback(integer, trace);
     
             factors = factor(integer);
             aliquot = sum(factors);
+            predecessors = get_predecessors(integer);
         
             type = None;
-            if aliquot in trace:
-                if len(trace) == 1: type = "Amicable";
+            if aliquot in predecessors:
+                if len(predecessors) == 1: type = "Amicable";
                 else: type = "Sociable";
             elif aliquot < integer: type = "Deficient";
             elif aliquot > integer: type = "Abundant";
             else: type = "Perfect";
     
             if type == "Amicable" or type == "Sociable":
-                for prev_integer in trace:
+                for prev_integer in predecessors:
                     update_aliquot_type(prev_integer, type);
-            # (悪) This information gets clobbered when we have
-            # saved in the database and thus close sequences
-            # before computing the whole thing. save_aliquot
-            # also overwrites what's in the database with
-            # what will now be basically no-trace variants.
-            # How will we update what's in the database when
-            # we encounter a terminal type? Or perhaps refuse
-            # to run this computation on any existing number
-            # beforehand. Like aliquot_computed(integer):
-            # return trace; at the start of the loop.
             if type == "Perfect" and not aliquot == 1:
-                for prev_integer in trace:
+                for prev_integer in predecessors:
                     update_aliquot_type(prev_integer, "Aspiring");
             save_aliquot(integer, factors, aliquot, type);
         
             trace.append(integer);
-            if aliquot_computed(aliquot): return trace;
-            elif type == "Amicable": return trace;
-            elif type == "Sociable": return trace;
-            elif type == "Perfect": return trace;
+            if type == "Perfect": break;
+            elif type == "Amicable": break;
+            elif type == "Sociable": break;
             else: integer = aliquot;
-    except KeyboardInterrupt: return trace;
+        except KeyboardInterrupt: break;
+    return trace;
 
 
 if __name__ == "__main__":
@@ -130,6 +162,9 @@ if __name__ == "__main__":
             "{}Computing".format("\b" * 40), integer,
             "after", len(trace), "numbers.",
             end="", flush=True);
+    def print_aliquot_data(integer):
+        [integer, factors, successor, type] = get_aliquot(integer);
+        print(integer, factors, successor, type, sep=" % ");
     startup_db();
     for arg in argv[1:]:
         try:
@@ -142,7 +177,9 @@ if __name__ == "__main__":
                     "{}Elapsed".format("\b" * 40),
                     "{}ms".format(elapsed_ms),
                     "for", len(trace), "new numbers.");
+            print_aliquot_data(int(arg));
+            for integer in get_successors(int(arg)):
+                print_aliquot_data(integer);
         except ValueError: continue;
-    print_aliquot_data();
     shutdown_db();
 
