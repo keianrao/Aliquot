@@ -60,16 +60,18 @@ def get_predecessors(integer):
         FROM Aliquot
         WHERE successor = ?""";
     returnee = set();
-    while True:
-        results = dbcursor.execute(sql, [integer]);
-        line = results.fetchone();
-        if not line: break;
-        [predecessor] = line;
-        prev_len = len(returnee);
-        returnee.add(predecessor);
-        if len(returnee) == prev_len: break;
-        integer = predecessor;
-    return returnee;
+    try:
+        while True:
+            results = dbcursor.execute(sql, [integer]);
+            line = results.fetchone();
+            if not line: break;
+            [predecessor] = line;
+            prev_len = len(returnee);
+            returnee.add(predecessor);
+            if len(returnee) == prev_len: break;
+            integer = predecessor;
+        return returnee;
+    except KeyboardInterrupt as e: raise e;
 
 def get_successors(integer):
     sql = """
@@ -81,7 +83,9 @@ def get_successors(integer):
     while True:
         results = dbcursor.execute(sql, [integer]);
         line = results.fetchone();
-        if not line: break;
+        if not line:
+            returnee.remove(integer);
+            break;
         [successor] = line;
         if successor == integer: break;
         if successor in returnee: break;
@@ -119,9 +123,9 @@ def factor(integer):
 
 def populate_aliquot_sequence(integer, prog_callback=None):
     trace = [];
-    while True:
-        # Recursion by loop to allow more than 900 iterations.
-        try:
+    try:
+        while True:
+            # Recursion by loop to allow more than 900 iterations.
             if aliquot_computed(integer): break;
             if prog_callback: prog_callback(integer, trace);
     
@@ -150,7 +154,7 @@ def populate_aliquot_sequence(integer, prog_callback=None):
             elif type == "Amicable": break;
             elif type == "Sociable": break;
             else: integer = aliquot;
-        except KeyboardInterrupt: break;
+    except KeyboardInterrupt as e: raise e;
     return trace;
 
 
@@ -159,7 +163,7 @@ if __name__ == "__main__":
     from time import time;
     def prog_callback(integer, trace):
         print(
-            "{}Computing".format("\b" * 40), integer,
+            "{}Computing".format("\b" * 80), integer,
             "after", len(trace), "numbers.",
             end="", flush=True);
     def print_aliquot_data(integer):
@@ -174,7 +178,7 @@ if __name__ == "__main__":
             end = time();
             elapsed_ms = (end - start) / 1000;
             print(
-                    "{}Elapsed".format("\b" * 40),
+                    "{}Elapsed".format("\b" * 80),
                     "{}ms".format(elapsed_ms),
                     "for", len(trace), "new numbers.");
             print_aliquot_data(int(arg));
